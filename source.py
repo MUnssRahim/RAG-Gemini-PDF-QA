@@ -2,30 +2,29 @@ import os
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 import google.generativeai as genai
-from langchain.vectorstores import Pinecone
+from langchain_community.vectorstores import Pinecone as LangPinecone
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain.chains.question_answering import load_qa_chain
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.prompts import PromptTemplate
 import streamlit as st
-import pinecone
+from pinecone import Pinecone  # <-- Using same as your earlier code
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
-# Retrieve the API key from the environment
-GoogleAPIKEY = os.getenv("Google_API_KEY")
-PineconeAPIKEY = os.getenv("Pinecone_API_KEY")
+# Retrieve API keys from .env
+GOOGLE_API_KEY = os.getenv("Google_API_KEY")
+PINECONE_API_KEY = os.getenv("Pinecone_API_KEY")
 
-# Configure the genai object with the API key
-genai.configure(api_key=GoogleAPIKEY)
+# Configure Google GenAI
+genai.configure(api_key=GOOGLE_API_KEY)
 
-# Initialize Pinecone
-pinecone.init(api_key=PineconeAPIKEY)
-index_name = "pdf-index"
+# Initialize Pinecone (like your first RAG code)
+pc = Pinecone(api_key=PINECONE_API_KEY)
+index_name = ""
 
 def getpdftext(file):
-    """Extracts text from a PDF file."""
     text = ""
     pdf_reader = PdfReader(file)
     for page in pdf_reader.pages:
@@ -33,31 +32,25 @@ def getpdftext(file):
     return text
 
 def texttochunk(text, chunk_size=10000, chunk_overlap=50):
-    """Splits text into chunks."""
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    chunks = text_splitter.split_text(text)
-    return chunks
+    return text_splitter.split_text(text)
 
 def getconversation(prompt_template):
-    """Creates a question-answering chain."""
     model = ChatGoogleGenerativeAI(model="gemini-pro", temperature=0.5)
     prompt = PromptTemplate(template=prompt_template, input_variables=['context', 'questions'])
-    chain = load_qa_chain(model, chain_type="stuff", prompt=prompt)
-    return chain
+    return load_qa_chain(model, chain_type="stuff", prompt=prompt)
 
 def storetoPinecone(text_chunks):
-    """Creates a local vector store and uploads to Pinecone."""
     try:
-        embeddings = GoogleGenerativeAIEmbeddings(model="embedding-v1")  # Example model name
-        vectorstore = Pinecone.from_texts(text_chunks, embedding=embeddings, index_name=index_name)
+        embeddings = GoogleGenerativeAIEmbeddings(model="embedding-v1")
+        LangPinecone.from_texts(text_chunks, embedding=embeddings, index_name=index_name)
     except Exception as e:
         raise
 
 def userinput(userquestion, chain):
-    """Handles user input and generates a response."""
     embeddings = GoogleGenerativeAIEmbeddings(model="embedding-v1")
     try:
-        vectorstore = Pinecone(index_name=index_name, embedding=embeddings)
+        vectorstore = LangPinecone.from_existing_index(index_name=index_name, embedding=embeddings)
         docs = vectorstore.similarity_search(userquestion)
         response = chain({"input_documents": docs, "question": userquestion}, return_only_outputs=True)
         st.write("Reply:", response["output_text"])
